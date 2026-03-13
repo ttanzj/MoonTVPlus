@@ -1,33 +1,41 @@
-name: Upstash Redis Keep Alive (Debug)
+name: Upstash Redis Keep-Alive
 
 on:
-  workflow_dispatch:
+  schedule:
+    # 每5天左右触发一次（5天 = 120小时，随机偏移0~24小时）
+    - cron: '30 3 */5 * *'
+
+  workflow_dispatch:  # 允许手动触发测试
 
 jobs:
-  keepalive:
+  keep-alive:
     runs-on: ubuntu-latest
     steps:
-      - name: Step 1 - Check secrets exist
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get random delay (0~24 hours)
+        id: random
         run: |
-          if [ -z "$UPSTASH_REDIS_REST_URL" ]; then
-            echo "❌ UPSTASH_REDIS_REST_URL is EMPTY"
+          # 随机生成 0~86400 秒（0~24小时）
+          RANDOM_DELAY=$((RANDOM % 86401))
+          echo "delay=$RANDOM_DELAY" >> $GITHUB_OUTPUT
+
+      - name: Sleep random time
+        run: sleep ${{ steps.random.outputs.delay }}
+
+      - name: Ping Upstash Redis (keep alive)
+        env:
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          if [ -z "$UPSTASH_REDIS_REST_URL" ] || [ -z "$UPSTASH_REDIS_REST_TOKEN" ]; then
+            echo "Error: UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set"
             exit 1
-          else
-            echo "✅ UPSTASH_REDIS_REST_URL is set"
           fi
 
-          if [ -z "$UPSTASH_REDIS_REST_TOKEN" ]; then
-            echo "❌ UPSTASH_REDIS_REST_TOKEN is EMPTY"
-            exit 1
-          else
-            echo "✅ UPSTASH_REDIS_REST_TOKEN is set"
-          fi
-
-      - name: Step 2 - Print URL (safe)
-        run: |
-          echo "URL=${UPSTASH_REDIS_REST_URL}"
-
-      - name: Step 3 - Ping Upstash Redis
-        run: |
-          curl -v -X POST "${UPSTASH_REDIS_REST_URL}/ping" \
-            -H "Authorization: Bearer ${UPSTASH_REDIS_REST_TOKEN}"
+          # 最可靠的保活方式：执行 PING 命令
+          curl -v -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN" \
+            -d '"PING"' \
+            -H "Content-Type: application/json" \
+            "$UPSTASH_REDIS_REST_URL"
