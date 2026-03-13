@@ -1,15 +1,33 @@
-name: Upstash Redis Keep Alive
+name: Upstash Redis Keep Alive (Debug)
 
 on:
-  schedule:
-    - cron: '0 3 */5 * *'   # 每 5 天执行一次（UTC 时间）
   workflow_dispatch:
 
 jobs:
   keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Upstash Redis
+      - name: Step 1 - Check secrets exist
         run: |
-          curl -X POST "$UPSTASH_REDIS_REST_URL/ping" \
-            -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
+          if [ -z "$UPSTASH_REDIS_REST_URL" ]; then
+            echo "❌ UPSTASH_REDIS_REST_URL is EMPTY"
+            exit 1
+          else
+            echo "✅ UPSTASH_REDIS_REST_URL is set"
+          fi
+
+          if [ -z "$UPSTASH_REDIS_REST_TOKEN" ]; then
+            echo "❌ UPSTASH_REDIS_REST_TOKEN is EMPTY"
+            exit 1
+          else
+            echo "✅ UPSTASH_REDIS_REST_TOKEN is set"
+          fi
+
+      - name: Step 2 - Print URL (safe)
+        run: |
+          echo "URL=${UPSTASH_REDIS_REST_URL}"
+
+      - name: Step 3 - Ping Upstash Redis
+        run: |
+          curl -v -X POST "${UPSTASH_REDIS_REST_URL}/ping" \
+            -H "Authorization: Bearer ${UPSTASH_REDIS_REST_TOKEN}"
