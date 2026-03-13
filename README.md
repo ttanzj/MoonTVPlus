@@ -484,6 +484,9 @@ NEXT_PUBLIC_VOICE_CHAT_STRATEGY 选项解释：
 2. **仅供个人使用**：请勿将您的实例链接公开分享或传播
 3. **遵守当地法律**：请确保您的使用行为符合当地法律法规
 
+### 视频源
+config.json文件为视频源，可直接复制进入配置订阅中将其复制进去，https://raw.githubusercontent.com/用户名/MoonTVPlus/main/config.json是拉取地址，但拉取格式尚未制作成功。
+
 ### 重要声明
 
 - 本项目仅供学习和个人使用
