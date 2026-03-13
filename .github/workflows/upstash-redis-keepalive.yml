@@ -1,0 +1,15 @@
+name: Upstash Redis Keep Alive
+
+on:
+  schedule:
+    - cron: '0 3 */5 * *'   # 每 5 天执行一次（UTC 时间）
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Upstash Redis
+        run: |
+          curl -X POST "$UPSTASH_REDIS_REST_URL/ping" \
+            -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN"
