@@ -1,13 +1,11 @@
-# 文件路径：.github/workflows/keep-alive-upstash.yml
-
 name: Upstash Redis Keep-Alive
 
 on:
   schedule:
-    # 每 5 天左右触发一次（但我们会在 job 里再做随机 5~6 天控制）
-    - cron: '15 3 */5 * *'     # 每5天大约执行一次（UTC 3:15）
+    # 大约每5天触发一次（内部再随机决定是否真的执行）
+    - cron: '15 3 */5 * *'     # UTC 03:15，每5天左右
 
-  workflow_dispatch:           # 允许手动触发测试
+  workflow_dispatch:           # 支持手动触发测试
 
 jobs:
   keep-alive:
@@ -16,20 +14,20 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6           # 已更新到 v6（支持 Node.js 24，避免弃用警告）
 
       # ────────────────────────────────────────────────
-      #  核心：随机决定本次是否真的要执行（模拟 5~6 天一次）
+      #  随机决定本次是否真的 ping（模拟平均 5~6 天一次）
       # ────────────────────────────────────────────────
-      - name: Decide whether to ping (random 5~6 days logic)
+      - name: Decide whether to ping this time
         id: should_ping
         run: |
-          # 随机数 0~9 (10种可能)
+          # 生成 0~9 的随机数
           RAND=$((RANDOM % 10))
 
           if [ $RAND -le 4 ]; then
-            # 0~4 → 这次执行（约50%概率）
-            # 但因为 cron 是每5天 → 实际平均约 5.5~6.2 天一次
+            # 0~4 → 执行（约 50% 概率）
+            # 配合 */5 调度 → 实际平均约 5.5~6.2 天一次
             echo "should_ping=true" >> $GITHUB_OUTPUT
             echo "Decision: YES - will ping Redis"
           else
@@ -38,36 +36,42 @@ jobs:
           fi
 
       # ────────────────────────────────────────────────
-      #  随机等待 10~180 秒，避免所有仓库同一时间打爆 Upstash
+      #  随机睡眠 10~180 秒，分散请求时间，避免集中打到 Upstash
       # ────────────────────────────────────────────────
-      - name: Random sleep (10~180 seconds)
+      - name: Random sleep (10–180 seconds)
         if: steps.should_ping.outputs.should_ping == 'true'
         run: |
           SLEEP_TIME=$((10 + RANDOM % 171))
-          echo "Sleeping for ${SLEEP_TIME} seconds..."
+          echo "Sleeping for ${SLEEP_TIME} seconds to spread load..."
           sleep $SLEEP_TIME
 
       # ────────────────────────────────────────────────
-      #  真正执行一次简单的 Redis ping (GET不存在的key也算活跃)
+      #  执行一次简单的 PING（零写操作，最省资源）
       # ────────────────────────────────────────────────
       - name: Ping Upstash Redis
         if: steps.should_ping.outputs.should_ping == 'true'
         env:
-          UPSTASH_URL:    ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_TOKEN:  ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          UPSTASH_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
         run: |
           if [ -z "$UPSTASH_URL" ] || [ -z "$UPSTASH_TOKEN" ]; then
-            echo "Error: UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set!"
+            echo "Error: Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN secret"
             exit 1
           fi
 
-          # 最简单活跃方式：发送 PING 命令
-          curl -s -o /dev/null -w "%{http_code}" \
+          # 使用 REST API 发送 PING 命令（最轻量保活方式）
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $UPSTASH_TOKEN" \
-            "$UPSTASH_URL/ping" \
-            | grep -q "200" && echo "Ping OK" || { echo "Ping FAILED"; exit 1; }
+            "$UPSTASH_URL/ping")
 
-          # 备选方式2：写一个临时key（更保险，但消耗1次写操作）
+          if [ "$RESPONSE" = "200" ]; then
+            echo "Ping successful (HTTP 200)"
+          else
+            echo "Ping failed - HTTP status: $RESPONSE"
+            exit 1
+          fi
+
+          # 可选：如果你更偏好写操作，可以替换上面为：
           # curl -s -H "Authorization: Bearer $UPSTASH_TOKEN" \
           #   "$UPSTASH_URL/set/gh-keepalive/$(date +%s)/1?EX=86400" \
-          #   && echo "SET OK" || echo "SET failed"
+          #   && echo "SET keep-alive OK" || { echo "SET failed"; exit 1; }
