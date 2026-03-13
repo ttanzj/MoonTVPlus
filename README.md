@@ -487,6 +487,10 @@ NEXT_PUBLIC_VOICE_CHAT_STRATEGY 选项解释：
 ### 视频源
 config.json文件为视频源，可直接复制进入配置订阅中将其复制进去，https://raw.githubusercontent.com/用户名/MoonTVPlus/main/config.json是拉取地址，但拉取格式尚未制作成功。
 
+### upstash的redis存储保活
+在https://github.com/用户名/MoonTVPlus/settings/secrets/actions建立Repository变量UPSTASH_REDIS_REST_TOKEN和UPSTASH_REDIS_REST_URL，从Upstash网站得到这两个值
+keep-alive-upstash.yml自动运行每5-6天访问一次保活
+
 ### 重要声明
 
 - 本项目仅供学习和个人使用
