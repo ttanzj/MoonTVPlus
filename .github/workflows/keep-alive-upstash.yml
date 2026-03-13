@@ -1,0 +1,73 @@
+# 文件路径：.github/workflows/keep-alive-upstash.yml
+
+name: Upstash Redis Keep-Alive
+
+on:
+  schedule:
+    # 每 5 天左右触发一次（但我们会在 job 里再做随机 5~6 天控制）
+    - cron: '15 3 */5 * *'     # 每5天大约执行一次（UTC 3:15）
+
+  workflow_dispatch:           # 允许手动触发测试
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ────────────────────────────────────────────────
+      #  核心：随机决定本次是否真的要执行（模拟 5~6 天一次）
+      # ────────────────────────────────────────────────
+      - name: Decide whether to ping (random 5~6 days logic)
+        id: should_ping
+        run: |
+          # 随机数 0~9 (10种可能)
+          RAND=$((RANDOM % 10))
+
+          if [ $RAND -le 4 ]; then
+            # 0~4 → 这次执行（约50%概率）
+            # 但因为 cron 是每5天 → 实际平均约 5.5~6.2 天一次
+            echo "should_ping=true" >> $GITHUB_OUTPUT
+            echo "Decision: YES - will ping Redis"
+          else
+            echo "should_ping=false" >> $GITHUB_OUTPUT
+            echo "Decision: NO - skip this time"
+          fi
+
+      # ────────────────────────────────────────────────
+      #  随机等待 10~180 秒，避免所有仓库同一时间打爆 Upstash
+      # ────────────────────────────────────────────────
+      - name: Random sleep (10~180 seconds)
+        if: steps.should_ping.outputs.should_ping == 'true'
+        run: |
+          SLEEP_TIME=$((10 + RANDOM % 171))
+          echo "Sleeping for ${SLEEP_TIME} seconds..."
+          sleep $SLEEP_TIME
+
+      # ────────────────────────────────────────────────
+      #  真正执行一次简单的 Redis ping (GET不存在的key也算活跃)
+      # ────────────────────────────────────────────────
+      - name: Ping Upstash Redis
+        if: steps.should_ping.outputs.should_ping == 'true'
+        env:
+          UPSTASH_URL:    ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_TOKEN:  ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          if [ -z "$UPSTASH_URL" ] || [ -z "$UPSTASH_TOKEN" ]; then
+            echo "Error: UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set!"
+            exit 1
+          fi
+
+          # 最简单活跃方式：发送 PING 命令
+          curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $UPSTASH_TOKEN" \
+            "$UPSTASH_URL/ping" \
+            | grep -q "200" && echo "Ping OK" || { echo "Ping FAILED"; exit 1; }
+
+          # 备选方式2：写一个临时key（更保险，但消耗1次写操作）
+          # curl -s -H "Authorization: Bearer $UPSTASH_TOKEN" \
+          #   "$UPSTASH_URL/set/gh-keepalive/$(date +%s)/1?EX=86400" \
+          #   && echo "SET OK" || echo "SET failed"
